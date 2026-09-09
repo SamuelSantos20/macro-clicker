@@ -5,9 +5,10 @@ import { Bookmark, Save, FolderOpen, Trash2, Clock, Play, Upload } from 'lucide-
 interface SavedMacrosManagerProps {
   currentPoints: ClickPoint[];
   currentMacroName: string;
+  currentMacroId: string | null;
   onMacroNameChange: (name: string) => void;
   savedMacros: Macro[];
-  onSaveCurrent: (name: string, description: string) => void;
+  onSaveCurrent: (name: string, description: string, asNew?: boolean) => void;
   onLoadMacro: (macro: Macro) => void;
   onDeleteMacro: (id: string) => void;
   onImportJson: (imported: Macro) => void;
@@ -16,6 +17,7 @@ interface SavedMacrosManagerProps {
 export function SavedMacrosManager({
   currentPoints,
   currentMacroName,
+  currentMacroId,
   onMacroNameChange,
   savedMacros,
   onSaveCurrent,
@@ -27,10 +29,10 @@ export function SavedMacrosManager({
   const [showSaveForm, setShowSaveForm] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  const handleSave = (e: FormEvent) => {
+  const handleSave = (e: FormEvent, asNew: boolean) => {
     e.preventDefault();
     if (!currentMacroName.trim()) return;
-    onSaveCurrent(currentMacroName.trim(), desc.trim());
+    onSaveCurrent(currentMacroName.trim(), desc.trim(), asNew);
     setShowSaveForm(false);
     setDesc('');
   };
@@ -150,11 +152,21 @@ export function SavedMacrosManager({
             >
               Cancelar
             </button>
+            {currentMacroId && (
+              <button
+                type="button"
+                onClick={(e) => handleSave(e, true)}
+                className="px-3 py-1 rounded bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-bold cursor-pointer"
+              >
+                Salvar como Cópia
+              </button>
+            )}
             <button
-              type="submit"
+              type="button"
+              onClick={(e) => handleSave(e, false)}
               className="px-3 py-1 rounded bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold cursor-pointer"
             >
-              Confirmar e Salvar
+              {currentMacroId ? 'Atualizar Atual' : 'Confirmar e Salvar'}
             </button>
           </div>
         </form>

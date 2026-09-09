@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { ClickPoint, ClickButton, ClickType } from '../types';
-import { Clock, Plus, Trash2, Play, MousePointer, Tag } from 'lucide-react';
+import { Clock, Plus, Trash2, Play, MousePointer, Tag, ChevronUp, ChevronDown } from 'lucide-react';
 import { soundManager } from '../utils/audio';
 
 interface SequenceEditorProps {
@@ -63,8 +63,26 @@ export function SequenceEditor({
   };
 
   const handleTestClick = (p: ClickPoint) => {
-    soundManager.playClick('down');
+    // Sound is already played by virtual cursor logic in ClickCanvas or parent components
     onPointSelect?.(p);
+  };
+
+  const handleMoveUp = (index: number) => {
+    if (index === 0) return;
+    const newPoints = [...points];
+    const temp = newPoints[index - 1];
+    newPoints[index - 1] = newPoints[index];
+    newPoints[index] = temp;
+    onPointsChange(newPoints);
+  };
+
+  const handleMoveDown = (index: number) => {
+    if (index === points.length - 1) return;
+    const newPoints = [...points];
+    const temp = newPoints[index + 1];
+    newPoints[index + 1] = newPoints[index];
+    newPoints[index] = temp;
+    onPointsChange(newPoints);
   };
 
   return (
@@ -202,6 +220,28 @@ export function SequenceEditor({
                   <div className="flex items-center gap-1">
                     <button
                       type="button"
+                      onClick={() => handleMoveUp(index)}
+                      disabled={index === 0}
+                      title="Mover para cima"
+                      className={`p-1.5 rounded-lg transition cursor-pointer ${
+                        index === 0 ? 'bg-slate-800/50 text-slate-600' : 'bg-slate-800 hover:bg-slate-700 text-slate-300'
+                      }`}
+                    >
+                      <ChevronUp className="w-3.5 h-3.5" />
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => handleMoveDown(index)}
+                      disabled={index === points.length - 1}
+                      title="Mover para baixo"
+                      className={`p-1.5 rounded-lg transition cursor-pointer ${
+                        index === points.length - 1 ? 'bg-slate-800/50 text-slate-600' : 'bg-slate-800 hover:bg-slate-700 text-slate-300'
+                      }`}
+                    >
+                      <ChevronDown className="w-3.5 h-3.5" />
+                    </button>
+                    <button
+                      type="button"
                       onClick={() => handleTestClick(point)}
                       title="Testar este clique"
                       className="p-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-sky-300 text-xs transition cursor-pointer"
@@ -230,6 +270,24 @@ export function SequenceEditor({
                 {/* Inline Edit Form */}
                 {isEditing && (
                   <div className="mt-3 pt-3 border-t border-slate-800 grid grid-cols-2 gap-2 text-xs">
+                    <div>
+                      <label className="text-[10px] text-slate-400 block mb-1">X (px)</label>
+                      <input
+                        type="number"
+                        value={point.x}
+                        onChange={(e) => handleUpdatePoint(point.id, { x: Number(e.target.value) })}
+                        className="w-full bg-slate-950 border border-slate-700 rounded px-2 py-1 text-slate-100 font-mono text-xs"
+                      />
+                    </div>
+                    <div>
+                      <label className="text-[10px] text-slate-400 block mb-1">Y (px)</label>
+                      <input
+                        type="number"
+                        value={point.y}
+                        onChange={(e) => handleUpdatePoint(point.id, { y: Number(e.target.value) })}
+                        className="w-full bg-slate-950 border border-slate-700 rounded px-2 py-1 text-slate-100 font-mono text-xs"
+                      />
+                    </div>
                     <div>
                       <label className="text-[10px] text-slate-400 block mb-1">Rótulo / Nome</label>
                       <input
