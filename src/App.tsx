@@ -67,6 +67,7 @@ const SAMPLE_MACROS: Macro[] = [
 export default function App() {
   const [points, setPoints] = useState<ClickPoint[]>(SAMPLE_MACROS[0].points);
   const [currentMacroName, setCurrentMacroName] = useState<string>('Minha Macro de Cliques');
+  const [currentMacroId, setCurrentMacroId] = useState<string | null>(null);
   const [canvasMode, setCanvasMode] = useState<CanvasMode>('interactive-sandbox');
   const [activeTab, setActiveTab] = useState<'sequence' | 'analysis' | 'saved' | 'export'>('sequence');
   const [playbackStatus, setPlaybackStatus] = useState<PlaybackStatus>('idle');
@@ -146,7 +147,7 @@ export default function App() {
   // Execution Step Runner
   const executeStep = useCallback((loop: number, stepIdx: number) => {
     if (!playbackActiveRef.current) return;
-    if (points.length === 0) {
+    if (points.length === 0 || !points[stepIdx]) {
       stopPlayback();
       return;
     }
@@ -277,28 +278,49 @@ export default function App() {
     setPoints(prev => prev.filter(p => p.id !== id));
   };
 
-  const handleSaveCurrent = (name: string, description: string) => {
-    const newMacro: Macro = {
-      id: `macro_${Date.now()}`,
-      name,
-      description,
-      createdAt: Date.now(),
-      updatedAt: Date.now(),
-      points: [...points],
-      defaultLoops: settings.loops,
-      defaultSpeed: settings.speed,
-      canvasWidth: 800,
-      canvasHeight: 520,
-      tags: ['usuario'],
-    };
-    setSavedMacros(prev => [newMacro, ...prev]);
-    setCurrentMacroName(name);
+  const handleSaveCurrent = (name: string, description: string, asNew: boolean = false) => {
+    if (currentMacroId && !asNew) {
+      setSavedMacros(prev => prev.map(m => {
+        if (m.id === currentMacroId) {
+          return {
+            ...m,
+            name,
+            description,
+            updatedAt: Date.now(),
+            points: [...points],
+            defaultLoops: settings.loops,
+            defaultSpeed: settings.speed,
+          };
+        }
+        return m;
+      }));
+      setCurrentMacroName(name);
+    } else {
+      const newId = `macro_${Date.now()}`;
+      const newMacro: Macro = {
+        id: newId,
+        name,
+        description,
+        createdAt: Date.now(),
+        updatedAt: Date.now(),
+        points: [...points],
+        defaultLoops: settings.loops,
+        defaultSpeed: settings.speed,
+        canvasWidth: 800,
+        canvasHeight: 520,
+        tags: ['usuario'],
+      };
+      setSavedMacros(prev => [newMacro, ...prev]);
+      setCurrentMacroName(name);
+      setCurrentMacroId(newId);
+    }
   };
 
   const handleLoadMacro = (macro: Macro) => {
     stopPlayback();
     setPoints([...macro.points]);
     setCurrentMacroName(macro.name);
+    setCurrentMacroId(macro.id);
     if (macro.defaultLoops !== undefined) {
       setSettings(s => ({ ...s, loops: macro.defaultLoops, speed: macro.defaultSpeed || 1 }));
     }
@@ -307,6 +329,9 @@ export default function App() {
 
   const handleDeleteMacro = (id: string) => {
     setSavedMacros(prev => prev.filter(m => m.id !== id));
+    if (currentMacroId === id) {
+      setCurrentMacroId(null);
+    }
   };
 
   const handleImportJson = (imported: Macro) => {
@@ -564,6 +589,7 @@ export default function App() {
                 <SavedMacrosManager
                   currentPoints={points}
                   currentMacroName={currentMacroName}
+                  currentMacroId={currentMacroId}
                   onMacroNameChange={setCurrentMacroName}
                   savedMacros={savedMacros}
                   onSaveCurrent={handleSaveCurrent}
