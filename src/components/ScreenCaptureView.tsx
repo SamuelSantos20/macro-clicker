@@ -1,141 +1,125 @@
-import { useRef, useEffect, useState } from 'react';
-import { Monitor, VideoOff, RefreshCw, AlertCircle } from 'lucide-react';
-
-interface ScreenCaptureViewProps {
-  onResolutionChange?: (width: number, height: number) => void;
+import { useEffect, useRef, useState } from 'react';
+import { Monitor, Square } from 'lucide-react';
+import { errorMessage } from '../utils/model';
+interface Props {
+  disabled: boolean;
+  onResolutionChange: (width: number, height: number) => void;
 }
-
-export function ScreenCaptureView({ onResolutionChange }: ScreenCaptureViewProps) {
-  const videoRef = useRef<HTMLVideoElement>(null);
+export function ScreenCaptureView({ disabled, onResolutionChange }: Props) {
+  const video = useRef<HTMLVideoElement>(null);
+  const active = useRef<MediaStream | null>(null);
+  const generation = useRef(0);
   const [stream, setStream] = useState<MediaStream | null>(null);
-  const [isCapturing, setIsCapturing] = useState(false);
-  const [errorMsg, setErrorMsg] = useState<string | null>(null);
-  const [streamResolution, setStreamResolution] = useState<{ width: number; height: number } | null>(null);
-
-  const startCapture = async () => {
-    setErrorMsg(null);
-    try {
-      if (!navigator.mediaDevices || !navigator.mediaDevices.getDisplayMedia) {
-        throw new Error('Seu navegador não suporta a API de captura de tela nesta visualização.');
-      }
-      const mediaStream = await navigator.mediaDevices.getDisplayMedia({
-        video: {
-          displaySurface: 'monitor',
-        },
-        audio: false,
-      });
-
-      setStream(mediaStream);
-      setIsCapturing(true);
-
-      if (videoRef.current) {
-        videoRef.current.srcObject = mediaStream;
-      }
-
-      const track = mediaStream.getVideoTracks()[0];
-      if (track) {
-        const settings = track.getSettings();
-        if (settings.width && settings.height) {
-          setStreamResolution({ width: settings.width, height: settings.height });
-          onResolutionChange?.(settings.width, settings.height);
-        }
-
-        track.onended = () => {
-          stopCapture();
-        };
-      }
-    } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : 'Falha ao capturar tela.';
-      setErrorMsg(msg);
-      setIsCapturing(false);
-    }
-  };
-
-  const stopCapture = () => {
-    if (stream) {
-      stream.getTracks().forEach(track => track.stop());
-    }
+  const [pending, setPending] = useState(false);
+  const [error, setError] = useState('');
+  const stop = () => {
+    generation.current++;
+    active.current?.getTracks().forEach((t) => t.stop());
+    active.current = null;
     setStream(null);
-    setIsCapturing(false);
-    setStreamResolution(null);
-    if (videoRef.current) {
-      videoRef.current.srcObject = null;
-    }
+    setPending(false);
   };
-
+  useEffect(
+    () => () => {
+      generation.current++;
+      active.current?.getTracks().forEach((t) => t.stop());
+    },
+    [],
+  );
   useEffect(() => {
+    const element = video.current;
+    if (element) {
+      element.srcObject = stream;
+      if (stream)
+        void element
+          .play()
+          .catch(() =>
+            setError(
+              'Não foi possível iniciar o vídeo. Selecione a tela novamente.',
+            ),
+          );
+    }
     return () => {
-      if (stream) {
-        stream.getTracks().forEach(track => track.stop());
-      }
+      if (element) element.srcObject = null;
     };
   }, [stream]);
-
+  const start = async () => {
+    const request = ++generation.current;
+    setPending(true);
+    setError('');
+    try {
+      if (!navigator.mediaDevices?.getDisplayMedia)
+        throw new Error(
+          'Captura indisponível neste navegador. Use uma imagem de referência.',
+        );
+      const next = await navigator.mediaDevices.getDisplayMedia({
+        video: true,
+        audio: false,
+      });
+      if (request !== generation.current) {
+        next.getTracks().forEach((t) => t.stop());
+        return;
+      }
+      active.current?.getTracks().forEach((t) => t.stop());
+      active.current = next;
+      next.getVideoTracks()[0].addEventListener('ended', () => {
+        if (active.current === next) stop();
+      });
+      setStream(next);
+    } catch (error) {
+      if (request === generation.current) setError(errorMessage(error));
+    } finally {
+      if (request === generation.current) setPending(false);
+    }
+  };
   return (
-    <div id="screen-capture-view" className="relative w-full h-full min-h-[460px] bg-slate-950 flex flex-col items-center justify-center rounded-xl overflow-hidden border border-slate-800">
-      {isCapturing ? (
-        <div className="relative w-full h-full flex flex-col">
-          {/* Top Bar for active capture */}
-          <div className="absolute top-3 left-3 right-3 z-20 flex items-center justify-between px-3 py-1.5 bg-slate-900/90 backdrop-blur rounded-lg border border-slate-800 text-xs shadow-md">
-            <div className="flex items-center gap-2 text-emerald-400 font-mono">
-              <span className="w-2 h-2 rounded-full bg-emerald-500 animate-ping" />
-              <span>Transmissão Ativa</span>
-              {streamResolution && (
-                <span className="text-slate-400 text-[11px]">
-                  ({streamResolution.width}x{streamResolution.height})
-                </span>
-              )}
-            </div>
-
-            <button
-              id="btn-stop-screen-capture"
-              type="button"
-              onClick={stopCapture}
-              className="flex items-center gap-1.5 px-2.5 py-1 rounded bg-rose-950/80 hover:bg-rose-900 border border-rose-800/80 text-rose-300 text-xs font-semibold cursor-pointer transition"
-            >
-              <VideoOff className="w-3.5 h-3.5" />
-              Parar Captura
-            </button>
-          </div>
-
-          <video
-            ref={videoRef}
-            autoPlay
-            playsInline
-            muted
-            className="w-full h-full object-contain pointer-events-none"
-          />
-        </div>
-      ) : (
-        <div className="text-center p-8 max-w-md flex flex-col items-center">
-          <div className="w-16 h-16 rounded-2xl bg-indigo-950/70 border border-indigo-800/60 flex items-center justify-center text-indigo-400 mb-4 shadow-lg">
-            <Monitor className="w-8 h-8" />
-          </div>
-
-          <h3 className="text-base font-bold text-slate-100 mb-1">
-            Espelhamento de Tela ao Vivo
-          </h3>
-          <p className="text-xs text-slate-400 mb-5 leading-relaxed">
-            Transmita uma janela, monitor ou aba do navegador para ver exatamente onde os cliques devem acontecer em seu aplicativo real.
+    <div className="reference-view">
+      <video
+        ref={video}
+        autoPlay
+        muted
+        playsInline
+        className={stream ? 'reference-video' : 'reference-video hidden'}
+        onLoadedMetadata={() => {
+          if (video.current?.videoWidth)
+            onResolutionChange(
+              video.current.videoWidth,
+              video.current.videoHeight,
+            );
+        }}
+      />
+      {!stream && (
+        <div className="reference-empty" data-ui="true">
+          <Monitor size={36} />
+          <h3>Uma referência ao vivo</h3>
+          <p>
+            Selecione um monitor ou uma janela para mapear as ações.
+            <br />A reprodução aqui é uma prévia; use Exportar para executar no
+            computador.
           </p>
-
-          {errorMsg && (
-            <div className="w-full mb-4 p-3 rounded-lg bg-rose-950/50 border border-rose-800/60 text-rose-300 text-xs flex items-start gap-2 text-left">
-              <AlertCircle className="w-4 h-4 shrink-0 mt-0.5 text-rose-400" />
-              <span>{errorMsg}</span>
-            </div>
-          )}
-
           <button
-            id="btn-start-screen-capture"
-            type="button"
-            onClick={startCapture}
-            className="flex items-center gap-2 px-5 py-2.5 rounded-lg bg-indigo-600 hover:bg-indigo-500 active:scale-95 text-white text-xs font-bold shadow-lg shadow-indigo-600/30 transition cursor-pointer"
+            className="primary"
+            disabled={disabled || pending}
+            onClick={() => void start()}
           >
-            <RefreshCw className="w-4 h-4" />
-            Selecionar Tela ou Janela
+            {pending ? 'Aguardando seleção…' : 'Selecionar tela ou janela'}
           </button>
+          {error && (
+            <p role="alert" className="error-text">
+              {error}
+            </p>
+          )}
         </div>
+      )}
+      {stream && (
+        <button
+          data-ui="true"
+          className="capture-stop"
+          disabled={disabled}
+          onClick={stop}
+        >
+          <Square size={12} /> Encerrar transmissão
+        </button>
       )}
     </div>
   );

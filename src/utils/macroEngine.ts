@@ -1,220 +1,228 @@
-import { ClickPoint, MacroAnalysis, PlaybackSettings } from '../types';
+import type { Macro } from '../types';
+import { parseMacro } from './model';
+import { actionDuration, waitDuration } from './playback';
+import { toTarget } from './coordinates';
 
-export function analyzeMacro(points: ClickPoint[], width: number, height: number): MacroAnalysis {
-  if (points.length === 0) {
-    return {
-      totalClicks: 0,
-      totalCycleTimeMs: 0,
-      averageDelayMs: 0,
-      minDelayMs: 0,
-      maxDelayMs: 0,
-      estimatedCps: 0,
-      boundingBox: { minX: 0, maxX: 0, minY: 0, maxY: 0, width: 0, height: 0 },
-      patternType: 'sequencial',
-      tips: ['Nenhum clique gravado ainda. Inicie a gravação e clique nos pontos desejados.']
-    };
-  }
-
-  const delays = points.map(p => p.delayMs);
-  const totalCycleTimeMs = delays.reduce((acc, d) => acc + d, 0);
-  const averageDelayMs = Math.round(totalCycleTimeMs / points.length);
-  const minDelayMs = Math.min(...delays);
-  const maxDelayMs = Math.max(...delays);
-
-  const durationSec = Math.max(totalCycleTimeMs / 1000, 0.05);
-  const estimatedCps = Number((points.length / durationSec).toFixed(2));
-
-  const xs = points.map(p => p.x);
-  const ys = points.map(p => p.y);
-  const minX = Math.min(...xs);
-  const maxX = Math.max(...xs);
-  const minY = Math.min(...ys);
-  const maxY = Math.max(...ys);
-  const boxWidth = maxX - minX;
-  const boxHeight = maxY - minY;
-
-  // Pattern detection
-  let patternType: MacroAnalysis['patternType'] = 'sequencial';
-  if (averageDelayMs < 120 && points.length > 3) {
-    patternType = 'rapido';
-  } else if (boxWidth < 40 && boxHeight < 40) {
-    patternType = 'ritmico';
-  } else if (boxWidth > width * 0.5 || boxHeight > height * 0.5) {
-    patternType = 'disperso';
-  }
-
-  const tips: string[] = [];
-  if (points.length === 1) {
-    tips.push('Apenas 1 ponto registrado: perfeito para autoclicker contínuo no mesmo alvo.');
-  } else if (averageDelayMs > 1200) {
-    tips.push('Pausas longas detectadas: aumente a velocidade para 2x ou 3x na barra de execução para acelerar o ciclo.');
-  }
-  if (minDelayMs < 40 && points.length > 2) {
-    tips.push('Cliques ultra rápidos (<40ms): alguns navegadores ou jogos podem ignorar eventos de clique tão curtos.');
-  }
-  if (points.length >= 3) {
-    tips.push(`Área de abrangência de ${Math.round(boxWidth)}x${Math.round(boxHeight)}px com ${points.length} etapas.`);
-  }
-
+export function analyzeMacro(input: Macro) {
+  const macro = parseMacro(input);
+  const waits = macro.points.map((p) =>
+    waitDuration(p, macro.settings, () => 0.5),
+  );
+  const cycleMs =
+    waits.reduce((a, b) => a + b, 0) +
+    macro.points.reduce((a, p) => a + actionDuration(p), 0);
+  const clicks = macro.points.reduce(
+    (a, p) => a + (p.clickType === 'double' ? 2 : 1),
+    0,
+  );
   return {
-    totalClicks: points.length,
-    totalCycleTimeMs,
-    averageDelayMs,
-    minDelayMs,
-    maxDelayMs,
-    estimatedCps,
-    boundingBox: { minX, maxX, minY, maxY, width: boxWidth, height: boxHeight },
-    patternType,
-    tips
+    cycleMs,
+    clicks,
+    cps: cycleMs ? clicks / (cycleMs / 1000) : 0,
+    totalMs: macro.settings.loops === 0 ? null : cycleMs * macro.settings.loops,
   };
 }
-
-// Generate Python PyAutoGUI code
-export function generatePythonScript(points: ClickPoint[], settings: PlaybackSettings, macroName: string): string {
-  const loopsComment = settings.loops === 0 ? 'Infinito (Ctrl+C para parar)' : `${settings.loops} repetições`;
-  const speed = settings.speed || 1;
-
-  const pointsCode = points.map((p, i) => {
-    let delaySec = (settings.timingMode === 'fixed' ? settings.fixedDelayMs : p.delayMs) / 1000 / speed;
-    delaySec = Math.max(0.01, delaySec);
-    const jitter = settings.humanizeJitterPx > 0
-      ? ` + random.randint(-${settings.humanizeJitterPx}, ${settings.humanizeJitterPx})`
-      : '';
-    const clickFn = p.clickType === 'double' ? 'pyautogui.doubleClick' : p.button === 'right' ? 'pyautogui.rightClick' : 'pyautogui.click';
-    return `    # Passo ${i + 1}: ${p.label || 'Clique'} (${p.percentX.toFixed(1)}%, ${p.percentY.toFixed(1)}%)
-    time.sleep(${delaySec.toFixed(3)})
-    target_x = int(screen_w * (${(p.percentX / 100).toFixed(4)}))${jitter}
-    target_y = int(screen_h * (${(p.percentY / 100).toFixed(4)}))${jitter}
-    ${clickFn}(target_x, target_y)`;
-  }).join('\n\n');
-
-  return `"""
-Macro Clicker - Script Python (PyAutoGUI)
-Macro: ${macroName}
-Repetições: ${loopsComment}
-Velocidade: ${speed}x
-Gerado automaticamente pelo Macro Clicker
-"""
-
+function prepare(input: Macro) {
+  const macro = parseMacro(input);
+  if (!macro.points.length)
+    throw new Error(
+      'Adicione pelo menos uma ação antes de exportar um script.',
+    );
+  if (!macro.target.confirmed)
+    throw new Error('Confirme a área de destino antes de exportar.');
+  // Only validated numeric values and fixed enums enter executable output.
+  // Names, notes and labels remain in the JSON backup, never in executable source.
+  return {
+    macro,
+    steps: macro.points.map((p) => ({
+      ...toTarget(p, macro.target),
+      button: p.button,
+      clicks: p.clickType === 'double' ? 2 : 1,
+      hold: p.clickType === 'press' ? p.holdMs : 0,
+      delay:
+        macro.settings.timingMode === 'fixed'
+          ? macro.settings.fixedDelayMs
+          : p.delayMs,
+    })),
+  };
+}
+export function generatePythonScript(input: Macro): string {
+  const { macro: m, steps } = prepare(input);
+  const payload = JSON.stringify(
+    JSON.stringify({ steps, settings: m.settings, target: m.target }),
+  );
+  return `# Macro Clicker | Python 3 + PyAutoGUI
+# Keep the target window in its calibrated position.
+import json
+import random
 import time
 import pyautogui
-import random
 
-# Segurança: Mover mouse para o canto superior esquerdo para abortar
+data = json.loads(${payload})
+settings = data["settings"]
+region = data["target"]
 pyautogui.FAILSAFE = True
-pyautogui.PAUSE = 0.01
+pyautogui.PAUSE = 0
+print("Starting in 3 seconds. Ctrl+C or move pointer to a screen corner to stop.")
 
-screen_w, screen_h = pyautogui.size()
-print(f"[*] Resolução da tela detectada: {screen_w}x{screen_h}")
-print("[*] Iniciando em 3 segundos... Prepare a janela alvo!")
-time.sleep(3)
+def safe_sleep(seconds):
+    remaining = seconds
+    while remaining > 0:
+        pyautogui.failSafeCheck()
+        interval = min(0.05, remaining)
+        time.sleep(interval)
+        remaining -= interval
+
+def release_button(button):
+    # Emergency cleanup must release the held button even at a failsafe corner.
+    previous = pyautogui.FAILSAFE
+    try:
+        pyautogui.FAILSAFE = False
+        pyautogui.mouseUp(button=button)
+    finally:
+        pyautogui.FAILSAFE = previous
 
 def run_cycle():
-${pointsCode}
-
-loops = ${settings.loops}
-current_loop = 0
+    for step in data["steps"]:
+        variance = random.randint(-settings["humanizeDelayMs"], settings["humanizeDelayMs"])
+        delay = max(20, int((step["delay"] + variance) / settings["speed"] + 0.5))
+        safe_sleep(delay / 1000)
+        jitter = settings["humanizeJitterPx"]
+        x = max(region["x"], min(region["x"] + region["width"] - 1, step["x"] + random.randint(-jitter, jitter)))
+        y = max(region["y"], min(region["y"] + region["height"] - 1, step["y"] + random.randint(-jitter, jitter)))
+        pyautogui.moveTo(x, y)
+        if step["hold"]:
+            pyautogui.mouseDown(button=step["button"])
+            try:
+                safe_sleep(step["hold"] / 1000)
+            finally:
+                release_button(step["button"])
+        else:
+            pyautogui.click(button=step["button"])
+            if step["clicks"] == 2:
+                safe_sleep(0.08)
+                pyautogui.click(button=step["button"])
 
 try:
-    if loops == 0:
-        print("[*] Executando em loop infinito. Pressione Ctrl+C para encerrar.")
-        while True:
-            current_loop += 1
-            print(f" -> Ciclo #{current_loop}")
-            run_cycle()
-    else:
-        print(f"[*] Executando {loops} ciclos...")
-        for i in range(loops):
-            print(f" -> Ciclo #{i + 1} de {loops}")
-            run_cycle()
-        print("[+] Macro concluída com sucesso!")
-except KeyboardInterrupt:
-    print("\\n[!] Macro interrompida pelo usuário.")
+    safe_sleep(3)
+    cycle = 0
+    while settings["loops"] == 0 or cycle < settings["loops"]:
+        run_cycle()
+        cycle += 1
+except (KeyboardInterrupt, pyautogui.FailSafeException):
+    print("Stopped.")
 `;
 }
-
-// Generate AutoHotkey (AHK v2 / v1 compatible) script
-export function generateAhkScript(points: ClickPoint[], settings: PlaybackSettings, macroName: string): string {
-  const speed = settings.speed || 1;
-  const loopCount = settings.loops === 0 ? '0' : String(settings.loops);
-
-  const steps = points.map((p, i) => {
-    let delayMs = Math.round((settings.timingMode === 'fixed' ? settings.fixedDelayMs : p.delayMs) / speed);
-    delayMs = Math.max(10, delayMs);
-    const clickCmd = p.clickType === 'double' ? 'Click, 2' : p.button === 'right' ? 'Click, Right' : 'Click';
-    return `    ; Passo ${i + 1}: ${p.label || 'Clique'}
-    Sleep, ${delayMs}
-    targetX := Round(A_ScreenWidth * ${(p.percentX / 100).toFixed(4)})
-    targetY := Round(A_ScreenHeight * ${(p.percentY / 100).toFixed(4)})
-    MouseMove, %targetX%, %targetY%, 0
-    ${clickCmd}`;
-  }).join('\n');
-
-  return `; ============================================
-; Macro Clicker - AutoHotkey (AHK Script)
-; Macro: ${macroName}
-; Pressione F8 para Iniciar
-; Pressione F9 para Pausar / Retomar
-; Pressione ESC para Finalizar
-; ============================================
-
-#NoEnv
+export function generateAhkScript(input: Macro): string {
+  const { macro: m, steps } = prepare(input);
+  const t = m.target,
+    s = m.settings;
+  const actions = steps
+    .map((p) => {
+      const button =
+        p.button === 'left'
+          ? 'Left'
+          : p.button === 'right'
+            ? 'Right'
+            : 'Middle';
+      return `        Sleep Max(20, Round((${p.delay} + Random(-${s.humanizeDelayMs}, ${s.humanizeDelayMs})) / ${s.speed}))
+        x := Max(${t.x}, Min(${t.x + t.width - 1}, ${p.x} + Random(-${s.humanizeJitterPx}, ${s.humanizeJitterPx})))
+        y := Max(${t.y}, Min(${t.y + t.height - 1}, ${p.y} + Random(-${s.humanizeJitterPx}, ${s.humanizeJitterPx})))
+        MouseMove x, y, 0
+${
+  p.hold
+    ? `        Click "${button} Down"
+        try {
+            Sleep ${p.hold}
+        } finally {
+            Click "${button} Up"
+        }`
+    : p.clicks === 2
+      ? `        Click "${button}"
+        Sleep 80
+        Click "${button}"`
+      : `        Click "${button}"`
+}`;
+    })
+    .join('\n');
+  return `; Macro Clicker | AutoHotkey v2
+#Requires AutoHotkey v2.0
 #SingleInstance Force
-SetBatchLines, -1
-CoordMode, Mouse, Screen
+CoordMode "Mouse", "Screen"
+SetMouseDelay -1
+SetDefaultMouseSpeed 0
+OnExit ReleaseButtons
 
-MsgBox, 64, Macro Clicker, Pressione F8 para INICIAR a macro "${macroName}".\`nPressione ESC a qualquer momento para PARAR.
+ReleaseButtons(*) {
+    Click "Left Up"
+    Click "Right Up"
+    Click "Middle Up"
+}
 
-F8::
-    TotalLoops := ${loopCount}
-    LoopCount := 0
-    
-    If (TotalLoops = 0) {
-        Loop {
-            ${steps}
-        }
-    } Else {
-        Loop, %TotalLoops% {
-            ${steps}
-        }
-        TrayTip, Macro Clicker, Macro finalizada com sucesso!, 3
+; F8 starts, Escape exits and releases held buttons.
+F8:: {
+    Loop ${s.loops || ''} {
+${actions}
     }
-return
-
-F9::Pause
+}
 Esc::ExitApp
 `;
 }
-
-// Generate Linux xdotool bash script
-export function generateBashScript(points: ClickPoint[], settings: PlaybackSettings, macroName: string): string {
-  const speed = settings.speed || 1;
-  const steps = points.map((p, i) => {
-    let delaySec = ((settings.timingMode === 'fixed' ? settings.fixedDelayMs : p.delayMs) / 1000 / speed).toFixed(3);
-    const btn = p.button === 'right' ? '3' : '1';
-    const clickCmd = p.clickType === 'double' ? `xdotool click --repeat 2 ${btn}` : `xdotool click ${btn}`;
-    return `    # Passo ${i + 1}
-    sleep ${delaySec}
-    xdotool mousemove ${Math.round(p.x)} ${Math.round(p.y)}
-    ${clickCmd}`;
-  }).join('\n');
-
-  return `#!/bin/bash
-# Macro Clicker - Script Bash (xdotool)
-# Macro: ${macroName}
-# Requer: sudo apt-get install xdotool
-
-echo "[*] Iniciando macro '${macroName}' em 3 segundos..."
-sleep 3
-
-run_macro() {
-${steps}
+export function generateBashScript(input: Macro): string {
+  const { macro: m, steps } = prepare(input);
+  const t = m.target,
+    s = m.settings;
+  const actions = steps
+    .map(
+      (p) => `    wait_ms ${p.delay} ${s.humanizeDelayMs} ${s.speed}
+    x=$(bounded ${p.x} ${s.humanizeJitterPx} ${t.x} ${t.x + t.width - 1})
+    y=$(bounded ${p.y} ${s.humanizeJitterPx} ${t.y} ${t.y + t.height - 1})
+    xdotool mousemove -- "$x" "$y"
+${
+  p.hold
+    ? `    held=${p.button === 'left' ? 1 : p.button === 'middle' ? 2 : 3}
+    xdotool mousedown "$held"
+    sleep ${(p.hold / 1000).toFixed(3)}
+    xdotool mouseup "$held"
+    held=""`
+    : `    xdotool click --repeat ${p.clicks} --delay 80 ${p.button === 'left' ? 1 : p.button === 'middle' ? 2 : 3}`
+}`,
+    )
+    .join('\n');
+  return `#!/usr/bin/env bash
+# Macro Clicker | Bash + xdotool (X11)
+set -euo pipefail
+held=""
+cleanup() { if [[ -n "$held" ]]; then xdotool mouseup "$held" || true; fi; }
+trap cleanup EXIT
+trap 'exit 130' INT
+trap 'exit 143' TERM
+bounded() {
+    local value=$1 jitter=$2 lower=$3 upper=$4 offset=0
+    if (( jitter > 0 )); then offset=$(random_offset "$jitter"); fi
+    value=$((value + offset))
+    (( value < lower )) && value=$lower
+    (( value > upper )) && value=$upper
+    printf '%s' "$value"
 }
-
-${settings.loops === 0 ? 'while true; do run_macro; done' : `for i in $(seq 1 ${settings.loops}); do
-    echo "Ciclo $i de ${settings.loops}..."
-    run_macro
-done`}
-echo "[+] Concluído!"
+random_offset() {
+    local draw=$(((RANDOM << 15) | RANDOM))
+    printf '%s' "$((draw % ($1 * 2 + 1) - $1))"
+}
+wait_ms() {
+    local variance
+    variance=$(random_offset "$2")
+    sleep "$(awk -v base="$1" -v variance="$variance" -v speed="$3" 'BEGIN { ms=int((base+variance)/speed+0.5); if(ms<20)ms=20; printf "%.3f",ms/1000 }')"
+}
+printf '%s\\n' 'Starting in 3 seconds. Ctrl+C to stop.'
+sleep 3
+run_cycle() {
+${actions}
+}
+cycle=0
+while (( ${s.loops} == 0 || cycle < ${s.loops} )); do
+    run_cycle
+    cycle=$((cycle + 1))
+done
 `;
 }
