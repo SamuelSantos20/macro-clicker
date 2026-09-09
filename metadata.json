@@ -1,0 +1,7 @@
+{
+  "name": "Macro Clicker",
+  "description": "Gravador e analisador de macros de cliques com captura de coordenadas na tela, análise de padrões e reprodução automatizada em repetições.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
+
