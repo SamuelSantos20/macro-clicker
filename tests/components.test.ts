@@ -1,3 +1,4 @@
+import { ClickCanvas } from "../src/components/ClickCanvas";
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { JSDOM } from 'jsdom';
@@ -24,6 +25,9 @@ function setup() {
     value: dom.window.localStorage,
     configurable: true,
   });
+  dom.window.HTMLElement.prototype.setPointerCapture = function() {};
+  dom.window.HTMLElement.prototype.releasePointerCapture = function() {};
+  dom.window.HTMLElement.prototype.hasPointerCapture = function() { return true; };
   Object.defineProperty(dom.window.HTMLMediaElement.prototype, 'play', {
     value: () => Promise.resolve(),
     configurable: true,
@@ -223,6 +227,44 @@ test('partial corrupt library preserves raw recovery data before a subsequent sa
   assert.ok(backup);
   assert.equal(localStorage.getItem(backup), raw);
   assert.equal(api.macros[0].description, 'Atualizada');
+  await act(async () => root.unmount());
+  dom.window.close();
+});
+
+test('ClickCanvas retains pointer capture during recording when pointer moves outside stage', async () => {
+  const { dom, root } = setup();
+  Object.assign(globalThis, {
+    ResizeObserver: class { observe() {} disconnect() {} }
+  });
+
+  let recorded = 0;
+  await act(async () =>
+    root.render(
+      createElement(ClickCanvas, {
+        macro: newMacro(),
+        status: 'recording',
+        step: -1,
+        onRecord: () => { recorded++; },
+        onSurface: () => {},
+      }),
+    ),
+  );
+
+  const stage = dom.window.document.querySelector('.stage')!;
+  stage.getBoundingClientRect = () => ({ left: 0, top: 0, right: 800, bottom: 600, width: 800, height: 600, x: 0, y: 0, toJSON: () => {} });
+
+  // Try pointer down
+  await act(async () => {
+    stage.dispatchEvent(new dom.window.PointerEvent('pointerdown', { bubbles: true, clientX: 100, clientY: 100, isPrimary: true, button: 0, pointerId: 1 }));
+  });
+
+  // Try pointer up (simulating outside, bubbles to stage because it has capture)
+  await act(async () => {
+    stage.dispatchEvent(new dom.window.PointerEvent('pointerup', { bubbles: true, clientX: 900, clientY: 900, isPrimary: true, button: 0, pointerId: 1 }));
+  });
+
+  assert.equal(recorded, 1);
+
   await act(async () => root.unmount());
   dom.window.close();
 });

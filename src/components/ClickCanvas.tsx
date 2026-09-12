@@ -206,15 +206,20 @@ export const ClickCanvas = forwardRef<CanvasHandle, Props>(function ClickCanvas(
               return;
             const r = stage.current!.getBoundingClientRect(),
               pos = fromClient(e.clientX, e.clientY, r, macro.surface);
-            if (pos)
+            if (pos) {
+              e.currentTarget.setPointerCapture(e.pointerId);
               pointer.current = {
                 ...pos,
                 button:
                   e.button === 2 ? 'right' : e.button === 1 ? 'middle' : 'left',
                 time: performance.now(),
               };
+            }
           }}
           onPointerUp={(e) => {
+            if (e.currentTarget.hasPointerCapture(e.pointerId)) {
+              e.currentTarget.releasePointerCapture(e.pointerId);
+            }
             if (
               status !== 'recording' ||
               !pointer.current ||
