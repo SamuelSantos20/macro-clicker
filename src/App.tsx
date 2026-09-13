@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect } from 'react';
+import { useState, useRef, useEffect, useCallback } from 'react';
 import {
   MousePointer2,
   Save,
@@ -123,22 +123,22 @@ export default function App() {
       setTab('editor');
       setShowLibrary(false);
     });
-  const startRecord = () => {
+  const startRecord = useCallback(() => {
     if (macro.surface.mode === 'custom-image' && !macro.surface.imageUrl) {
       notify('Carregue uma imagem antes de gravar.', true);
       return;
     }
     playback.record();
     setTab('editor');
-  };
-  const play = () => {
+  }, [macro.surface.mode, macro.surface.imageUrl, playback]);
+  const play = useCallback(() => {
     try {
       parseMacro(macro);
       if (macro.points.length) playback.play(macro);
     } catch (e) {
       notify(errorMessage(e), true);
     }
-  };
+  }, [macro, playback]);
   const clear = () => {
     playback.stop();
     if (macro.points.length)
@@ -227,7 +227,7 @@ export default function App() {
     };
     window.addEventListener('keydown', handler);
     return () => window.removeEventListener('keydown', handler);
-  });
+  }, [playback, locked, tab, macro, startRecord, play]);
   const upload = async (file: File) => {
     try {
       if (file.size > MAX_FILE_BYTES) throw new Error('O arquivo excede 4 MB.');
