@@ -1,4 +1,4 @@
-import { Plus, Trash2, ChevronUp, ChevronDown, Crosshair } from 'lucide-react';
+import { Plus, Trash2, ChevronUp, ChevronDown, Crosshair, Copy } from 'lucide-react';
 import type { ClickPoint, Macro } from '../types';
 import { pointAt } from '../utils/model';
 interface Props {
@@ -9,6 +9,7 @@ interface Props {
   onChange: (points: ClickPoint[]) => void;
   onClear: () => void;
   onTest: (point: ClickPoint) => void;
+  onDuplicate: (id: string) => void;
 }
 export function SequenceEditor({
   macro,
@@ -18,6 +19,7 @@ export function SequenceEditor({
   onChange,
   onClear,
   onTest,
+  onDuplicate,
 }: Props) {
   const move = (i: number, d: number) => {
     const p = [...macro.points];
@@ -150,6 +152,13 @@ export function SequenceEditor({
                         onClick={() => onTest(p)}
                       >
                         <Crosshair size={13} />
+                      </button>
+                      <button
+                        aria-label={'Duplicar etapa ' + (i + 1)}
+                        disabled={locked || macro.points.length >= 2000}
+                        onClick={() => onDuplicate(p.id)}
+                      >
+                        <Copy size={13} />
                       </button>
                       <button
                         aria-label={'Excluir etapa ' + (i + 1)}

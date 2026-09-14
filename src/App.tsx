@@ -508,6 +508,22 @@ export default function App() {
                         settings: { ...macro.settings, loops: 1 },
                       });
                     }}
+                    onDuplicate={(id) => {
+                      if (macro.points.length >= 2000) return;
+                      const index = macro.points.findIndex((p) => p.id === id);
+                      if (index === -1) return;
+                      const original = macro.points[index];
+                      const duplicate = {
+                        ...original,
+                        id: crypto.randomUUID(),
+                        label: original.label + ' (cópia)',
+                        timestamp: Date.now(),
+                      };
+                      const nextPoints = [...macro.points];
+                      nextPoints.splice(index + 1, 0, duplicate);
+                      update({ points: nextPoints });
+                      setSelected(duplicate.id);
+                    }}
                   />
                   <label className="description-label">
                     NOTAS DA SEQUÊNCIA
