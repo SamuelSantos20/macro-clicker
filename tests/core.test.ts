@@ -6,6 +6,7 @@ import {
   serializeMacro,
   importMacro,
   pointAt,
+  errorMessage,
 } from '../src/utils/model';
 import { fromClient, toTarget } from '../src/utils/coordinates';
 import {
@@ -418,4 +419,24 @@ test('exporters preserve middle and right double clicks, hold and jitter semanti
     /Click "Right"\n {8}Sleep 80\n {8}Click "Right"/,
   );
   assert.match(generateBashScript(m), /click --repeat 2 --delay 80 3/);
+});
+
+test('errorMessage extracts message from Error instances or returns a default', () => {
+  assert.equal(
+    errorMessage(new Error('This is a specific error')),
+    'This is a specific error',
+  );
+  assert.equal(
+    errorMessage('Just a string'),
+    'Não foi possível concluir a operação.',
+  );
+  assert.equal(
+    errorMessage({ code: 500 }),
+    'Não foi possível concluir a operação.',
+  );
+  assert.equal(errorMessage(null), 'Não foi possível concluir a operação.');
+  assert.equal(
+    errorMessage(undefined),
+    'Não foi possível concluir a operação.',
+  );
 });
