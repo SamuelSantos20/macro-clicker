@@ -1,6 +1,9 @@
 import type { Macro, ClickPoint, PlaybackSettings } from '../types';
 import { SlidersHorizontal, MousePointer2 } from 'lucide-react';
 import { pointAt } from '../utils/model';
+
+const SPEED_OPTIONS = [0.25, 0.5, 1, 1.5, 2, 5, 10];
+
 interface Props {
   macro: Macro;
   point?: ClickPoint;
@@ -48,12 +51,12 @@ export function Inspector({
               value={s.speed}
               onChange={(e) => settings({ speed: Number(e.target.value) })}
             >
-              {[0.25, 0.5, 1, 1.5, 2, 5, 10].map((v) => (
+              {SPEED_OPTIONS.map((v: number) => (
                 <option key={v} value={v}>
                   {v}×
                 </option>
               ))}
-              {![0.25, 0.5, 1, 1.5, 2, 5, 10].includes(s.speed) && (
+              {!SPEED_OPTIONS.includes(s.speed) && (
                 <option value={s.speed}>{s.speed}×</option>
               )}
             </select>
