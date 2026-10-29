@@ -12,13 +12,14 @@ export function useLibrary() {
       if (!Array.isArray(parsed) || parsed.length > 200)
         throw new Error('Biblioteca inválida.');
       const macros: Macro[] = [];
+      const seenIds = new Set<string>();
       let invalid = 0;
       for (const entry of parsed) {
         try {
           const macro = parseMacro(entry);
-          if (macros.some((m) => m.id === macro.id))
-            throw new Error('ID duplicado');
+          if (seenIds.has(macro.id)) throw new Error('ID duplicado');
           macros.push(macro);
+          seenIds.add(macro.id);
         } catch {
           invalid++;
         }
