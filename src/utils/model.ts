@@ -157,11 +157,56 @@ export function pointAt(
     percentY: (y / surface.height) * 100,
   };
 }
-export function parseMacro(value: unknown): Macro {
-  const m = object(value, 'Macro');
-  if (m.schemaVersion !== undefined && m.schemaVersion !== 2)
-    throw new Error('Versão de arquivo não suportada.');
-  const legacy = m.schemaVersion === undefined;
+function parsePoint(
+  raw: unknown,
+  index: number,
+  legacy: boolean,
+  surface: Surface,
+  ids: Set<string>,
+): ClickPoint {
+  const p = object(raw, 'Ponto ' + (index + 1));
+  const id =
+    p.id === undefined && legacy
+      ? crypto.randomUUID()
+      : string(p.id, 'ID do ponto', 200);
+  if (!id || ids.has(id)) throw new Error('Os pontos precisam ter IDs únicos.');
+  ids.add(id);
+  const px = number(p.percentX, 'Percentual X', 0, 100);
+  const py = number(p.percentY, 'Percentual Y', 0, 100);
+  const x = number(p.x, 'Coordenada X', 0, 16384);
+  const y = number(p.y, 'Coordenada Y', 0, 16384);
+  if (
+    !legacy &&
+    (Math.abs(x - (px * surface.width) / 100) > 0.1 ||
+      Math.abs(y - (py * surface.height) / 100) > 0.1)
+  )
+    throw new Error('Coordenadas e percentuais do ponto são inconsistentes.');
+  return {
+    id,
+    ...pointAt(
+      (px * surface.width) / 100,
+      (py * surface.height) / 100,
+      surface,
+    ),
+    timestamp: number(
+      p.timestamp ?? 0,
+      'Data do ponto',
+      0,
+      Number.MAX_SAFE_INTEGER,
+    ),
+    delayMs: number(p.delayMs, 'Espera', 0, 3600000),
+    button: choice(p.button, ['left', 'right', 'middle'], 'Botão'),
+    clickType: choice(p.clickType, ['single', 'double', 'press'], 'Ação'),
+    holdMs: number(p.holdMs ?? 500, 'Duração', 20, 60000, true),
+    label: string(p.label ?? 'Ponto ' + (index + 1), 'Rótulo', 200),
+    ...(p.note === undefined ? {} : { note: string(p.note, 'Nota', 2000) }),
+  };
+}
+
+function validateMacroFields(
+  m: Record<string, unknown>,
+  legacy: boolean,
+): void {
   if (!legacy) {
     for (const key of [
       'id',
@@ -187,6 +232,14 @@ export function parseMacro(value: unknown): Macro {
   ]) {
     if (m[key] === null) throw new Error('Campo inválido: ' + key);
   }
+}
+
+export function parseMacro(value: unknown): Macro {
+  const m = object(value, 'Macro');
+  if (m.schemaVersion !== undefined && m.schemaVersion !== 2)
+    throw new Error('Versão de arquivo não suportada.');
+  const legacy = m.schemaVersion === undefined;
+  validateMacroFields(m, legacy);
   const surface = parseSurface(
     m.surface ?? {
       mode: 'calibration-grid',
@@ -201,44 +254,7 @@ export function parseMacro(value: unknown): Macro {
     throw new Error('A macro deve conter até ' + MAX_POINTS + ' pontos.');
   const ids = new Set<string>();
   const points = m.points.map((raw, index): ClickPoint => {
-    const p = object(raw, 'Ponto ' + (index + 1));
-    const id =
-      p.id === undefined && legacy
-        ? crypto.randomUUID()
-        : string(p.id, 'ID do ponto', 200);
-    if (!id || ids.has(id))
-      throw new Error('Os pontos precisam ter IDs únicos.');
-    ids.add(id);
-    const px = number(p.percentX, 'Percentual X', 0, 100);
-    const py = number(p.percentY, 'Percentual Y', 0, 100);
-    const x = number(p.x, 'Coordenada X', 0, 16384);
-    const y = number(p.y, 'Coordenada Y', 0, 16384);
-    if (
-      !legacy &&
-      (Math.abs(x - (px * surface.width) / 100) > 0.1 ||
-        Math.abs(y - (py * surface.height) / 100) > 0.1)
-    )
-      throw new Error('Coordenadas e percentuais do ponto são inconsistentes.');
-    return {
-      id,
-      ...pointAt(
-        (px * surface.width) / 100,
-        (py * surface.height) / 100,
-        surface,
-      ),
-      timestamp: number(
-        p.timestamp ?? 0,
-        'Data do ponto',
-        0,
-        Number.MAX_SAFE_INTEGER,
-      ),
-      delayMs: number(p.delayMs, 'Espera', 0, 3600000),
-      button: choice(p.button, ['left', 'right', 'middle'], 'Botão'),
-      clickType: choice(p.clickType, ['single', 'double', 'press'], 'Ação'),
-      holdMs: number(p.holdMs ?? 500, 'Duração', 20, 60000, true),
-      label: string(p.label ?? 'Ponto ' + (index + 1), 'Rótulo', 200),
-      ...(p.note === undefined ? {} : { note: string(p.note, 'Nota', 2000) }),
-    };
+    return parsePoint(raw, index, legacy, surface, ids);
   });
   const now = Date.now();
   const date = (v: unknown) =>
