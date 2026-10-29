@@ -137,6 +137,32 @@ test('validates roots, schema versions and all public generator entry points', (
   }
   assert.throws(() => importMacro('{"points":[],"defaultLoops":1e999}'));
 });
+test('rejects invalid setting boundaries and types', () => {
+  const base = fixture();
+  for (const patch of [
+    { loops: -1 },
+    { loops: 100001 },
+    { loops: 1.5 },
+    { speed: 0.05 },
+    { speed: 11 },
+    { timingMode: 'invalid' },
+    { fixedDelayMs: 19 },
+    { fixedDelayMs: 3600001 },
+    { fixedDelayMs: 20.5 },
+    { humanizeJitterPx: -1 },
+    { humanizeJitterPx: 101 },
+    { humanizeJitterPx: 5.5 },
+    { humanizeDelayMs: -1 },
+    { humanizeDelayMs: 60001 },
+    { humanizeDelayMs: 10.5 },
+    { soundEnabled: 'yes' },
+    { showCursorTrail: 1 },
+    { showRipples: null },
+  ]) {
+    const m = { ...base, settings: { ...base.settings, ...patch } };
+    assert.throws(() => parseMacro(m));
+  }
+});
 test('rejects invalid point enums, coordinates, IDs, oversized payloads and URLs', () => {
   for (const patch of [
     { button: 'unknown' },
