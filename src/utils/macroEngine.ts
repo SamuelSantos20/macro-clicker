@@ -5,15 +5,14 @@ import { toTarget } from './coordinates';
 
 export function analyzeMacro(input: Macro) {
   const macro = parseMacro(input);
-  const waits = macro.points.map((p) =>
-    waitDuration(p, macro.settings, () => 0.5),
-  );
-  const cycleMs =
-    waits.reduce((a, b) => a + b, 0) +
-    macro.points.reduce((a, p) => a + actionDuration(p), 0);
-  const clicks = macro.points.reduce(
-    (a, p) => a + (p.clickType === 'double' ? 2 : 1),
-    0,
+  const { cycleMs, clicks } = macro.points.reduce(
+    (acc, p) => {
+      acc.cycleMs +=
+        waitDuration(p, macro.settings, () => 0.5) + actionDuration(p);
+      acc.clicks += p.clickType === 'double' ? 2 : 1;
+      return acc;
+    },
+    { cycleMs: 0, clicks: 0 },
   );
   return {
     cycleMs,
