@@ -6,6 +6,7 @@ import {
   serializeMacro,
   importMacro,
   pointAt,
+  parseSurface,
 } from '../src/utils/model';
 import { fromClient, toTarget } from '../src/utils/coordinates';
 import {
@@ -114,6 +115,25 @@ test('does not export a backup too large to import again', () => {
   }));
   assert.throws(() => serializeMacro(m), /backup excede 4 MB/);
 });
+test('rejects surface with invalid width or height boundaries', () => {
+  const valid = { mode: 'calibration-grid', width: 800, height: 520 };
+
+  for (const invalid of [
+    { ...valid, width: 0 },
+    { ...valid, width: 16385 },
+    { ...valid, width: 800.5 },
+    { ...valid, height: 0 },
+    { ...valid, height: 16385 },
+    { ...valid, height: 520.5 },
+  ]) {
+    assert.throws(() => parseSurface(invalid), /valor inválido/);
+  }
+
+  // Extreme boundaries 1 and 16384 should be accepted for non-sandbox mode
+  assert.ok(parseSurface({ mode: 'calibration-grid', width: 1, height: 1 }));
+  assert.ok(parseSurface({ mode: 'calibration-grid', width: 16384, height: 16384 }));
+});
+
 test('validates roots, schema versions and all public generator entry points', () => {
   for (const invalid of [
     null,
