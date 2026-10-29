@@ -6,6 +6,7 @@ import {
   serializeMacro,
   importMacro,
   pointAt,
+  parseSurface,
 } from '../src/utils/model';
 import { fromClient, toTarget } from '../src/utils/coordinates';
 import {
@@ -418,4 +419,29 @@ test('exporters preserve middle and right double clicks, hold and jitter semanti
     /Click "Right"\n {8}Sleep 80\n {8}Click "Right"/,
   );
   assert.match(generateBashScript(m), /click --repeat 2 --delay 80 3/);
+});
+test('rejects surface dimensions outside boundaries', () => {
+  const validSurface = {
+    mode: 'calibration-grid',
+    width: 800,
+    height: 520,
+  };
+
+  // Valid boundaries
+  assert.doesNotThrow(() => parseSurface({ ...validSurface, width: 1 }));
+  assert.doesNotThrow(() => parseSurface({ ...validSurface, width: 16384 }));
+  assert.doesNotThrow(() => parseSurface({ ...validSurface, height: 1 }));
+  assert.doesNotThrow(() => parseSurface({ ...validSurface, height: 16384 }));
+
+  // Invalid boundaries - below minimum
+  assert.throws(() => parseSurface({ ...validSurface, width: 0 }), /Largura: valor inválido \(1 a 16384\)\./);
+  assert.throws(() => parseSurface({ ...validSurface, height: 0 }), /Altura: valor inválido \(1 a 16384\)\./);
+
+  // Invalid boundaries - above maximum
+  assert.throws(() => parseSurface({ ...validSurface, width: 16385 }), /Largura: valor inválido \(1 a 16384\)\./);
+  assert.throws(() => parseSurface({ ...validSurface, height: 16385 }), /Altura: valor inválido \(1 a 16384\)\./);
+
+  // Invalid interactive-sandbox surface dimensions
+  assert.throws(() => parseSurface({ ...validSurface, mode: 'interactive-sandbox', width: 801 }), /O laboratório utiliza uma superfície de 800 × 520\./);
+  assert.throws(() => parseSurface({ ...validSurface, mode: 'interactive-sandbox', height: 521 }), /O laboratório utiliza uma superfície de 800 × 520\./);
 });
