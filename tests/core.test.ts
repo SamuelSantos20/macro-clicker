@@ -419,3 +419,48 @@ test('exporters preserve middle and right double clicks, hold and jitter semanti
   );
   assert.match(generateBashScript(m), /click --repeat 2 --delay 80 3/);
 });
+
+test('analyzeMacro correctly calculates stats for empty macros, loops, click types, and timing modes', () => {
+  const emptyMacro = fixture();
+  emptyMacro.points = [];
+  emptyMacro.settings.loops = 0;
+  assert.deepEqual(analyzeMacro(emptyMacro), {
+    cycleMs: 0,
+    clicks: 0,
+    cps: 0,
+    totalMs: null,
+  });
+
+  emptyMacro.settings.loops = 5;
+  assert.equal(analyzeMacro(emptyMacro).totalMs, 0);
+
+  const macro = fixture();
+  macro.settings.loops = 0;
+  assert.deepEqual(analyzeMacro(macro), {
+    cycleMs: 100,
+    clicks: 1,
+    cps: 10,
+    totalMs: null,
+  });
+
+  macro.settings.loops = 4;
+  assert.equal(analyzeMacro(macro).totalMs, 400);
+
+  const multiClickMacro = fixture();
+  multiClickMacro.points = [
+    { ...multiClickMacro.points[0], id: 'p1', clickType: 'single', delayMs: 100 },
+    { ...multiClickMacro.points[0], id: 'p2', clickType: 'double', delayMs: 200 },
+    { ...multiClickMacro.points[0], id: 'p3', clickType: 'press', delayMs: 300, holdMs: 500 },
+  ];
+  const analysis = analyzeMacro(multiClickMacro);
+  assert.equal(analysis.cycleMs, 1180);
+  assert.equal(analysis.clicks, 4);
+  assert.equal(analysis.cps, 4 / 1.18);
+
+  multiClickMacro.settings.timingMode = 'fixed';
+  multiClickMacro.settings.fixedDelayMs = 200;
+  multiClickMacro.settings.speed = 2;
+  assert.equal(analyzeMacro(multiClickMacro).cycleMs, 880);
+
+  assert.throws(() => analyzeMacro(null as unknown as Macro));
+});
