@@ -6,6 +6,7 @@ import {
   serializeMacro,
   importMacro,
   pointAt,
+  parseTarget,
 } from '../src/utils/model';
 import { fromClient, toTarget } from '../src/utils/coordinates';
 import {
@@ -166,6 +167,32 @@ test('rejects invalid point enums, coordinates, IDs, oversized payloads and URLs
     }),
   );
   assert.throws(() => importMacro(' '.repeat(4_000_001)));
+});
+test('parseTarget validates limits for coordinates and dimensions', () => {
+  const validTarget = { x: 0, y: 0, width: 800, height: 600, confirmed: true };
+
+  // Valid bounds
+  assert.doesNotThrow(() => parseTarget(validTarget));
+  assert.doesNotThrow(() => parseTarget({ ...validTarget, x: -32768, y: -32768 }));
+  assert.doesNotThrow(() => parseTarget({ ...validTarget, x: 32768, y: 32768 }));
+  assert.doesNotThrow(() => parseTarget({ ...validTarget, width: 1, height: 1 }));
+  assert.doesNotThrow(() => parseTarget({ ...validTarget, width: 16384, height: 16384 }));
+
+  // Invalid x
+  assert.throws(() => parseTarget({ ...validTarget, x: -32769 }), /Origem X: valor inválido/);
+  assert.throws(() => parseTarget({ ...validTarget, x: 32769 }), /Origem X: valor inválido/);
+
+  // Invalid y
+  assert.throws(() => parseTarget({ ...validTarget, y: -32769 }), /Origem Y: valor inválido/);
+  assert.throws(() => parseTarget({ ...validTarget, y: 32769 }), /Origem Y: valor inválido/);
+
+  // Invalid width
+  assert.throws(() => parseTarget({ ...validTarget, width: 0 }), /Largura de destino: valor inválido/);
+  assert.throws(() => parseTarget({ ...validTarget, width: 16385 }), /Largura de destino: valor inválido/);
+
+  // Invalid height
+  assert.throws(() => parseTarget({ ...validTarget, height: 0 }), /Altura de destino: valor inválido/);
+  assert.throws(() => parseTarget({ ...validTarget, height: 16385 }), /Altura de destino: valor inválido/);
 });
 test('untrusted text never enters executable source in any platform', () => {
   const attacks = [
