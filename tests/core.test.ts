@@ -7,7 +7,7 @@ import {
   importMacro,
   pointAt,
 } from '../src/utils/model';
-import { fromClient, toTarget } from '../src/utils/coordinates';
+import { clamp, fromClient, toTarget } from '../src/utils/coordinates';
 import {
   PlaybackEngine,
   waitDuration,
@@ -418,4 +418,10 @@ test('exporters preserve middle and right double clicks, hold and jitter semanti
     /Click "Right"\n {8}Sleep 80\n {8}Click "Right"/,
   );
   assert.match(generateBashScript(m), /click --repeat 2 --delay 80 3/);
+});
+
+test('clamp returns value within bounds, minimum if below, and maximum if above', () => {
+  assert.equal(clamp(5, 0, 10), 5);
+  assert.equal(clamp(-5, 0, 10), 0);
+  assert.equal(clamp(15, 0, 10), 10);
 });
